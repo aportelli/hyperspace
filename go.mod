@@ -1,4 +1,4 @@
-module github.com/aportelli/filewalker
+module github.com/aportelli/hyperspace
 
 go 1.19
 

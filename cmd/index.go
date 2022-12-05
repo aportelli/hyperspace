@@ -14,10 +14,31 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
-package main
+package cmd
 
-import "github.com/aportelli/hyperspace/cmd"
+import (
+	log "github.com/aportelli/golog"
+	"github.com/aportelli/hyperspace/index"
+	"github.com/spf13/cobra"
+)
 
-func main() {
-	cmd.Execute()
+// scanCmd represents the index command
+var indexCmd = &cobra.Command{
+	Use:   "index <dir>",
+	Short: "Index directory",
+	Long:  ``,
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		root := args[0]
+		fileIndexer, err := index.NewFileIndexer("test.db", true)
+		log.ErrorCheck(err, "could not create database")
+		fileIndexer.IndexDir(root)
+		err = fileIndexer.Close()
+		log.ErrorCheck(err, "could not close database")
+		log.Msg.Println(fileIndexer.Stats())
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(indexCmd)
 }
