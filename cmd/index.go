@@ -17,6 +17,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package cmd
 
 import (
+	"os"
+
 	log "github.com/aportelli/golog"
 	"github.com/aportelli/hyperspace/index"
 	"github.com/spf13/cobra"
@@ -30,15 +32,29 @@ var indexCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		root := args[0]
-		fileIndexer, err := index.NewFileIndexer("test.db", true)
+		dbPath := indexOpt.Db
+		if dbPath == "" {
+			cacheDir, err := os.UserCacheDir()
+			log.ErrorCheck(err, "")
+			err = os.MkdirAll(cacheDir+"/hyperspace", 0750)
+			dbPath = cacheDir + "/hyperspace/index.db"
+			log.ErrorCheck(err, "")
+		}
+		log.Dbg.Println("using database '" + dbPath + "'")
+		fileIndexer, err := index.NewFileIndexer(dbPath, true)
 		log.ErrorCheck(err, "could not create database")
 		fileIndexer.IndexDir(root)
 		err = fileIndexer.Close()
 		log.ErrorCheck(err, "could not close database")
-		log.Msg.Println(fileIndexer.Stats())
+		stats := fileIndexer.Stats()
+		log.Msg.Printf("Indexed %d file(s), total size %s", stats.NFiles,
+			log.SizeString(log.ByteSize(stats.TotalSize)))
 	},
 }
 
+var indexOpt = struct{ Db string }{Db: ""}
+
 func init() {
 	rootCmd.AddCommand(indexCmd)
+	indexCmd.Flags().StringVarP(&indexOpt.Db, "db", "d", "", "index database path")
 }

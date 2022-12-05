@@ -87,7 +87,7 @@ func (s *FileIndexer) insertTree(entry TreeEntry) error {
 
 func (s *FileIndexer) insertData(c indexChan) {
 	var err error
-	log.Dbg.Println("FileScanner: Inserter started")
+	log.Dbg.Println("FileIndexer: Inserter started")
 	for {
 		err = s.begin()
 		if err != nil {
@@ -113,7 +113,7 @@ func (s *FileIndexer) insertData(c indexChan) {
 					c.Error <- err
 				}
 				close(c.InsertFinished)
-				log.Dbg.Println("FileScanner: Inserter quitting")
+				log.Dbg.Println("FileIndexer: Inserter quitting")
 				return
 			}
 		}

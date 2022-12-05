@@ -18,16 +18,35 @@ package cmd
 
 import (
 	"os"
+	"runtime/pprof"
 
+	log "github.com/aportelli/golog"
 	"github.com/spf13/cobra"
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "fw",
-	Short: "",
+	Use:   "hs",
+	Short: "Fast file indexer",
 	Long:  ``,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if rootOpt.Profile != "" {
+			log.Inf.Printf("Starting profiling (output file '%s')", rootOpt.Profile)
+			f, err := os.Create(rootOpt.Profile)
+			log.ErrorCheck(err, "cannot create profile file '"+rootOpt.Profile+"'")
+			err = pprof.StartCPUProfile(f)
+			log.ErrorCheck(err, "cannot start profiling")
+		}
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if rootOpt.Profile != "" {
+			log.Inf.Printf("Stopping profiling (output file '%s')", rootOpt.Profile)
+			pprof.StopCPUProfile()
+		}
+	},
 }
+
+var rootOpt = struct{ Profile string }{""}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -39,5 +58,7 @@ func Execute() {
 }
 
 func init() {
-
+	rootCmd.PersistentFlags().IntVarP(&log.Level, "verbosity", "v", 0,
+		"verbosity level (0: default, 1: info, 2: debug)")
+	rootCmd.PersistentFlags().StringVar(&rootOpt.Profile, "profile", "", "save pprof profile")
 }
