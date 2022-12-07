@@ -17,6 +17,8 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package index
 
 import (
+	"sync"
+
 	log "github.com/aportelli/golog"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -37,7 +39,7 @@ func (s *FileIndexer) initDb() error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("CREATE TABLE IF NOT EXISTS files (id INT PRIMARY KEY, path TEXT NOT NULL)")
+	_, err = s.db.Exec("CREATE TABLE IF NOT EXISTS files (id INT PRIMARY KEY, path TEXT UNIQUE NOT NULL)")
 	if err != nil {
 		return err
 	}
@@ -64,62 +66,63 @@ func (s *FileIndexer) commit() error {
 	return err
 }
 
-type FileEntry struct {
-	Id   uint64
-	Path string
-}
-
-type TreeEntry struct {
+type fileEntry struct {
 	Id       uint64
+	Path     string
 	ParentId any
 	Size     int64
 }
 
-func (s *FileIndexer) insertFile(entry FileEntry) error {
+func (s *FileIndexer) insertFile(entry *fileEntry) error {
 	_, err := s.insertFileStmt.Exec(entry.Id, entry.Path)
 	return err
 }
 
-func (s *FileIndexer) insertTree(entry TreeEntry) error {
+func (s *FileIndexer) insertTree(entry *fileEntry) error {
 	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Size)
 	return err
 }
 
-func (s *FileIndexer) insertData(c indexChan) {
+type insertChan struct {
+	entries <-chan *fileEntry
+	quit    <-chan struct{}
+	errors  chan<- error
+}
+
+func (s *FileIndexer) insertData(c insertChan, wg *sync.WaitGroup) {
 	var err error
+	defer wg.Done()
 	log.Dbg.Println("FileIndexer: Inserter started")
 	for {
 		err = s.begin()
 		if err != nil {
-			c.Error <- err
+			c.errors <- err
 		}
 		for i := uint(0); i < s.batchSize; i++ {
 			select {
-			case fileEntry := <-c.File:
+			case fileEntry := <-c.entries:
 				err = s.insertFile(fileEntry)
 				if err != nil {
-					c.Error <- err
+					c.errors <- err
 				}
-			case treeEntry := <-c.Tree:
-				s.insertTree(treeEntry)
+				err = s.insertTree(fileEntry)
 				if err != nil {
-					c.Error <- err
+					c.errors <- err
 				}
 				s.stats.NFiles++
-				s.stats.TotalSize += uint64(treeEntry.Size)
-			case <-c.StopInsert:
+				s.stats.TotalSize += uint64(fileEntry.Size)
+			case <-c.quit:
 				err = s.commit()
 				if err != nil {
-					c.Error <- err
+					c.errors <- err
 				}
-				close(c.InsertFinished)
 				log.Dbg.Println("FileIndexer: Inserter quitting")
 				return
 			}
 		}
 		err = s.commit()
 		if err != nil {
-			c.Error <- err
+			c.errors <- err
 		}
 	}
 }

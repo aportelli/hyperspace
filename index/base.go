@@ -19,7 +19,9 @@ package index
 import (
 	"database/sql"
 	"os"
+	"runtime"
 	"sync"
+	"sync/atomic"
 )
 
 type IndexerStats struct {
@@ -31,15 +33,17 @@ type FileIndexer struct {
 	db             *sql.DB
 	insertFileStmt *sql.Stmt
 	insertTreeStmt *sql.Stmt
-	wg             sync.WaitGroup
 	maxId          uint64
 	batchSize      uint
 	stats          IndexerStats
+	dirCache       sync.Map
+	nWorkers       uint
 }
 
 func NewFileIndexer(path string, resetDb bool) (*FileIndexer, error) {
 	s := new(FileIndexer)
 	s.batchSize = 10000
+	s.nWorkers = (uint)(2 * runtime.NumCPU())
 	var err error
 	if resetDb {
 		err = os.RemoveAll(path)
@@ -61,4 +65,17 @@ func (s *FileIndexer) resetStats() {
 
 func (s *FileIndexer) Stats() IndexerStats {
 	return s.stats
+}
+
+func (s *FileIndexer) getDirId(path string, newId uint64) (uint64, uint64) {
+	dirId, loaded := s.dirCache.LoadOrStore(path, newId)
+	if loaded {
+		return dirId.(uint64), newId
+	} else {
+		return dirId.(uint64), s.newId()
+	}
+}
+
+func (s *FileIndexer) newId() uint64 {
+	return atomic.AddUint64(&s.maxId, 1)
 }
