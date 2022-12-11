@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/aportelli/golog v1.0.0
+	github.com/briandowns/spinner v1.19.0
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/spf13/cobra v1.6.1
 )

@@ -17,10 +17,14 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"os/signal"
+	"time"
 
 	log "github.com/aportelli/golog"
 	"github.com/aportelli/hyperspace/index"
+	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -43,12 +47,47 @@ var indexCmd = &cobra.Command{
 		log.Dbg.Println("using database '" + dbPath + "'")
 		fileIndexer, err := index.NewFileIndexer(dbPath, true)
 		log.ErrorCheck(err, "could not create database")
-		fileIndexer.IndexDir(root)
+		spin := spinner.New(spinString, 100*time.Millisecond)
+		spin.Color("blue")
+		log.Msg.Printf("Scanning directory '%s'", root)
+		done := make(chan bool)
+		sigint := make(chan os.Signal)
+		signal.Notify(sigint, os.Interrupt)
+		ticker := time.NewTicker(500 * time.Millisecond)
+		tStart := <-ticker.C
+		go func() {
+			<-sigint
+			if spin.Active() {
+				spin.Stop()
+			}
+			log.Err.Fatalln("Indexing interrupted")
+		}()
+		go func() {
+			fileIndexer.IndexDir(root)
+			done <- true
+		}()
+	out:
+		for {
+			select {
+			case <-done:
+				break out
+			case t := <-ticker.C:
+				if !spin.Active() {
+					spin.Start()
+				}
+				dt := t.Sub(tStart)
+				stats := fileIndexer.Stats()
+				spin.Suffix = fmt.Sprintf(" %.0f files/s | total size: %s", float64(stats.NFiles)/dt.Seconds(),
+					log.SizeString(log.ByteSize(stats.TotalSize)))
+			}
+		}
 		err = fileIndexer.Close()
 		log.ErrorCheck(err, "could not close database")
+		spin.Stop()
+		dt := time.Since(tStart)
 		stats := fileIndexer.Stats()
-		log.Msg.Printf("Indexed %d file(s), total size %s", stats.NFiles,
-			log.SizeString(log.ByteSize(stats.TotalSize)))
+		log.Msg.Printf("Indexed %d file(s), total size %s, %.0f files/s", stats.NFiles,
+			log.SizeString(log.ByteSize(stats.TotalSize)), float64(stats.NFiles)/dt.Seconds())
 	},
 }
 
