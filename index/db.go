@@ -18,6 +18,7 @@ package index
 
 import (
 	"sync"
+	"sync/atomic"
 
 	log "github.com/aportelli/golog"
 	_ "github.com/mattn/go-sqlite3"
@@ -109,8 +110,8 @@ func (s *FileIndexer) insertData(c insertChan, wg *sync.WaitGroup) {
 				if err != nil {
 					c.errors <- err
 				}
-				s.stats.NFiles++
-				s.stats.TotalSize += uint64(fileEntry.Size)
+				atomic.AddUint64(&s.stats.NFiles, 1)
+				atomic.AddUint64(&s.stats.TotalSize, uint64(fileEntry.Size))
 			case <-c.quit:
 				err = s.commit()
 				if err != nil {

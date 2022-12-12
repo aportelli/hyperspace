@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	log "github.com/aportelli/golog"
 )
@@ -117,6 +118,9 @@ func (s *FileIndexer) directoryScanner(workerId uint, c scanChan, wg *sync.WaitG
 		var currentId uint64 // will be the id of the current directory
 		newId := s.newId()   // next usable id
 
+		// registering as active
+		atomic.AddInt32(&s.stats.ActiveWorkers, 1)
+
 		// process current directory
 		currentId, newId = s.getDirId(j.path, newId)
 		if j.isRoot {
@@ -161,5 +165,8 @@ func (s *FileIndexer) directoryScanner(workerId uint, c scanChan, wg *sync.WaitG
 		if err != nil {
 			c.errors <- err
 		}
+
+		// registering as inactive
+		atomic.AddInt32(&s.stats.ActiveWorkers, -1)
 	}
 }

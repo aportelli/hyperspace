@@ -25,8 +25,9 @@ import (
 )
 
 type IndexerStats struct {
-	NFiles    uint64
-	TotalSize uint64
+	NFiles        uint64
+	TotalSize     uint64
+	ActiveWorkers int32
 }
 
 type FileIndexer struct {
