@@ -76,11 +76,13 @@ type fileEntry struct {
 
 func (s *FileIndexer) insertFile(entry *fileEntry) error {
 	_, err := s.insertFileStmt.Exec(entry.Id, entry.Path)
+	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }
 
 func (s *FileIndexer) insertTree(entry *fileEntry) error {
 	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Size)
+	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }
 

@@ -27,6 +27,7 @@ type IndexerStats struct {
 	TotalSize      uint64
 	ActiveWorkers  int32
 	QueuingWorkers int32
+	DbInsertions   uint64
 }
 
 type FileIndexer struct {
@@ -62,7 +63,7 @@ func NewFileIndexer(path string, opt FileIndexerOpt, resetDb bool) (*FileIndexer
 }
 
 func (s *FileIndexer) resetStats() {
-	s.stats = IndexerStats{NFiles: 0, TotalSize: 0}
+	s.stats = IndexerStats{}
 }
 
 func (s *FileIndexer) Stats() IndexerStats {

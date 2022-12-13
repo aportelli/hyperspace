@@ -79,8 +79,9 @@ var indexCmd = &cobra.Command{
 				}
 				dt := t.Sub(tStart)
 				stats := fileIndexer.Stats()
-				spin.Suffix = fmt.Sprintf(" %.0f files/s | %d active workers | %d queuing workers | total size: %s", float64(stats.NFiles)/dt.Seconds(),
-					stats.ActiveWorkers, stats.QueuingWorkers, log.SizeString(log.ByteSize(stats.TotalSize)))
+				spin.Suffix = fmt.Sprintf(" %.0f files/s | %d active workers | %d queuing directories | %.0f DB insertions/s | total size: %s",
+					float64(stats.NFiles)/dt.Seconds(), stats.ActiveWorkers, stats.QueuingWorkers,
+					float64(stats.DbInsertions)/dt.Seconds(), log.SizeString(log.ByteSize(stats.TotalSize)))
 			}
 		}
 		err = fileIndexer.Close()
