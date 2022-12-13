@@ -19,15 +19,14 @@ package index
 import (
 	"database/sql"
 	"os"
-	"runtime"
-	"sync"
 	"sync/atomic"
 )
 
 type IndexerStats struct {
-	NFiles        uint64
-	TotalSize     uint64
-	ActiveWorkers int32
+	NFiles         uint64
+	TotalSize      uint64
+	ActiveWorkers  int32
+	QueuingWorkers int32
 }
 
 type FileIndexer struct {
@@ -35,16 +34,18 @@ type FileIndexer struct {
 	insertFileStmt *sql.Stmt
 	insertTreeStmt *sql.Stmt
 	maxId          uint64
-	batchSize      uint
 	stats          IndexerStats
-	dirCache       sync.Map
-	nWorkers       uint
+	opt            FileIndexerOpt
 }
 
-func NewFileIndexer(path string, resetDb bool) (*FileIndexer, error) {
+type FileIndexerOpt struct {
+	NumWorkers  uint
+	DbBatchSize uint
+}
+
+func NewFileIndexer(path string, opt FileIndexerOpt, resetDb bool) (*FileIndexer, error) {
 	s := new(FileIndexer)
-	s.batchSize = 10000
-	s.nWorkers = (uint)(2 * runtime.NumCPU())
+	s.opt = opt
 	var err error
 	if resetDb {
 		err = os.RemoveAll(path)
@@ -66,15 +67,6 @@ func (s *FileIndexer) resetStats() {
 
 func (s *FileIndexer) Stats() IndexerStats {
 	return s.stats
-}
-
-func (s *FileIndexer) getDirId(path string, newId uint64) (uint64, uint64) {
-	dirId, loaded := s.dirCache.LoadOrStore(path, newId)
-	if loaded {
-		return dirId.(uint64), newId
-	} else {
-		return dirId.(uint64), s.newId()
-	}
 }
 
 func (s *FileIndexer) newId() uint64 {

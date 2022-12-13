@@ -17,7 +17,6 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package index
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,21 +25,10 @@ import (
 	log "github.com/aportelli/golog"
 )
 
-type walkChan struct {
-	jobs   chan<- *scanJob
-	errors chan<- error
-	done   chan<- struct{}
-}
-
-type scanJob struct {
-	path   string
-	isRoot bool
-}
-
 type scanChan struct {
-	jobs    <-chan *scanJob
 	entries chan<- *fileEntry
 	errors  chan<- error
+	guard   chan struct{}
 }
 
 var signal = struct{}{}
@@ -48,40 +36,38 @@ var signal = struct{}{}
 func (s *FileIndexer) IndexDir(dir string) error {
 	s.maxId = 0
 	s.resetStats()
-	cjobs := make(chan *scanJob)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
 	centries := make(chan *fileEntry)
 	cerrors := make(chan error)
 	cquit := make(chan struct{})
-	walkDone := make(chan struct{})
+	cguard := make(chan struct{}, s.opt.NumWorkers)
 	scanDone := make(chan struct{})
-	wc := walkChan{jobs: cjobs, errors: cerrors, done: walkDone}
-	sc := scanChan{jobs: cjobs, entries: centries, errors: cerrors}
+	sc := scanChan{entries: centries, errors: cerrors, guard: cguard}
 	ic := insertChan{entries: centries, quit: cquit, errors: cerrors}
 	var swg, iwg sync.WaitGroup
 	iwg.Add(1)
 	go s.insertData(ic, &iwg)
-	swg.Add(1)
-	go s.directoryProducer(dir, wc, &swg)
 	go func() {
-		log.Dbg.Printf("FileIndexer: Scanner pool starting (%d workers)", s.nWorkers)
-		for i := uint(0); i < s.nWorkers; i++ {
-			swg.Add(1)
-			go s.directoryScanner(i, sc, &swg)
-		}
+		log.Dbg.Printf("FileIndexer: Scanner starting")
+		id := s.newId()
+		centries <- &fileEntry{Id: id, ParentId: nil, Path: dir, Size: info.Size()}
+		swg.Add(1)
+		cguard <- signal
+		go s.scanDirectory(dirData{Path: dir, Id: id}, sc, &swg)
 		swg.Wait()
 		scanDone <- signal
 	}()
 out:
 	for {
 		select {
-		case <-walkDone:
-			close(cjobs)
 		case <-scanDone:
 			close(cquit)
 			break out
 		case err := <-cerrors:
 			log.Err.Fatalln(err)
-			close(cjobs)
 			close(cquit)
 			return err
 		}
@@ -90,83 +76,48 @@ out:
 	return nil
 }
 
-func (s *FileIndexer) directoryProducer(root string, c walkChan, wg *sync.WaitGroup) {
+type dirData struct {
+	Path string
+	Id   any
+}
+
+func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) {
 	defer wg.Done()
-	log.Dbg.Println("FileIndexer: Walker started")
-	c.jobs <- &scanJob{path: root, isRoot: true}
-	visit := func(path string, d os.DirEntry, err error) error {
+	defer func() { <-c.guard }()
+
+	// registering as active
+	atomic.AddInt32(&s.stats.ActiveWorkers, 1)
+
+	// scan function
+	scan := func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() && root != path {
-			c.jobs <- &scanJob{path: path, isRoot: false}
+		info, err2 := d.Info()
+		if err2 != nil {
+			return nil
+		}
+		if d.IsDir() && dd.Path != path {
+			newId := s.newId()
+			c.entries <- &fileEntry{Id: newId, ParentId: dd.Id, Path: path, Size: info.Size()}
+			wg.Add(1)
+			go func() {
+				atomic.AddInt32(&s.stats.QueuingWorkers, 1)
+				c.guard <- signal
+				atomic.AddInt32(&s.stats.QueuingWorkers, -1)
+				s.scanDirectory(dirData{Path: path, Id: newId}, c, wg)
+			}()
+			return filepath.SkipDir
+		} else if !d.IsDir() {
+			c.entries <- &fileEntry{Id: s.newId(), ParentId: dd.Id, Path: path, Size: info.Size()}
+			return nil
 		}
 		return nil
 	}
-	err := filepath.WalkDir(root, visit)
-	if err != nil {
-		c.errors <- err
-	}
-	c.done <- signal
-	log.Dbg.Println("FileIndexer: Walker quitting")
-}
 
-func (s *FileIndexer) directoryScanner(workerId uint, c scanChan, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for j := range c.jobs {
-		var parentId any     // will be the id of the parent directory
-		var currentId uint64 // will be the id of the current directory
-		newId := s.newId()   // next usable id
+	// walk the tree
+	filepath.WalkDir(dd.Path, scan)
 
-		// registering as active
-		atomic.AddInt32(&s.stats.ActiveWorkers, 1)
-
-		// process current directory
-		currentId, newId = s.getDirId(j.path, newId)
-		if j.isRoot {
-			parentId = nil
-		} else {
-			parent := filepath.Dir(j.path)
-			parentId, newId = s.getDirId(parent, newId)
-		}
-		if j.isRoot {
-			i, err := os.Stat(j.path)
-			if err != nil {
-				c.errors <- err
-			}
-			c.entries <- &fileEntry{Id: currentId, ParentId: parentId, Path: j.path, Size: i.Size()}
-		}
-
-		// process other files in directory
-		scan := func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			i, err2 := d.Info()
-			if err2 != nil {
-				return nil
-			}
-			if path != j.path {
-				var id uint64
-				if d.IsDir() {
-					id, newId = s.getDirId(path, newId)
-				} else {
-					id = newId
-					newId = s.newId()
-				}
-				c.entries <- &fileEntry{Id: id, ParentId: currentId, Path: path, Size: i.Size()}
-				if d.IsDir() {
-					return fs.SkipDir
-				}
-			}
-			return nil
-		}
-		err := filepath.WalkDir(j.path, scan)
-		if err != nil {
-			c.errors <- err
-		}
-
-		// registering as inactive
-		atomic.AddInt32(&s.stats.ActiveWorkers, -1)
-	}
+	// registering as inactive
+	atomic.AddInt32(&s.stats.ActiveWorkers, -1)
 }

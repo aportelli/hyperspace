@@ -99,7 +99,7 @@ func (s *FileIndexer) insertData(c insertChan, wg *sync.WaitGroup) {
 		if err != nil {
 			c.errors <- err
 		}
-		for i := uint(0); i < s.batchSize; i++ {
+		for i := uint(0); i < s.opt.DbBatchSize; i++ {
 			select {
 			case fileEntry := <-c.entries:
 				err = s.insertFile(fileEntry)

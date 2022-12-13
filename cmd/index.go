@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"time"
 
 	log "github.com/aportelli/golog"
@@ -45,7 +46,7 @@ var indexCmd = &cobra.Command{
 			log.ErrorCheck(err, "")
 		}
 		log.Dbg.Println("using database '" + dbPath + "'")
-		fileIndexer, err := index.NewFileIndexer(dbPath, true)
+		fileIndexer, err := index.NewFileIndexer(dbPath, indexOpt.Opt, true)
 		log.ErrorCheck(err, "could not create database")
 		spin := spinner.New(spinString, 100*time.Millisecond)
 		spin.Color("blue")
@@ -63,7 +64,8 @@ var indexCmd = &cobra.Command{
 			log.Err.Fatalln("Indexing interrupted")
 		}()
 		go func() {
-			fileIndexer.IndexDir(root)
+			err := fileIndexer.IndexDir(root)
+			log.ErrorCheck(err, "Indexer encountered an error")
 			done <- true
 		}()
 	out:
@@ -77,8 +79,8 @@ var indexCmd = &cobra.Command{
 				}
 				dt := t.Sub(tStart)
 				stats := fileIndexer.Stats()
-				spin.Suffix = fmt.Sprintf(" %.0f files/s | %d active workers | total size: %s", float64(stats.NFiles)/dt.Seconds(),
-					stats.ActiveWorkers, log.SizeString(log.ByteSize(stats.TotalSize)))
+				spin.Suffix = fmt.Sprintf(" %.0f files/s | %d active workers | %d queuing workers | total size: %s", float64(stats.NFiles)/dt.Seconds(),
+					stats.ActiveWorkers, stats.QueuingWorkers, log.SizeString(log.ByteSize(stats.TotalSize)))
 			}
 		}
 		err = fileIndexer.Close()
@@ -91,9 +93,17 @@ var indexCmd = &cobra.Command{
 	},
 }
 
-var indexOpt = struct{ Db string }{Db: ""}
+var indexOpt = struct {
+	Db  string
+	Opt index.FileIndexerOpt
+}{
+	Db:  "",
+	Opt: index.FileIndexerOpt{NumWorkers: 0, DbBatchSize: 0},
+}
 
 func init() {
 	rootCmd.AddCommand(indexCmd)
 	indexCmd.Flags().StringVarP(&indexOpt.Db, "db", "d", "", "index database path")
+	indexCmd.Flags().UintVarP(&indexOpt.Opt.NumWorkers, "jobs", "j", (uint)(10*runtime.NumCPU()), "number of concurrent scanner tasks")
+	indexCmd.Flags().UintVarP(&indexOpt.Opt.DbBatchSize, "db-batch", "b", 1000000, "number of insertion per DB transaction")
 }
