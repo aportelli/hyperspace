@@ -1,5 +1,3 @@
-github.com/aportelli/golog v1.1.0 h1:z14r5ChPrheeDmuIh9hFDK0rxK5QnTsQ93pikIv21lg=
-github.com/aportelli/golog v1.1.0/go.mod h1:oZU0Wb48ZTJKjihG9GfDC0h5VLSuhqvygtOA6CGlFzU=
 github.com/aportelli/golog v1.1.1 h1:bPqlNKFC9JZT3NrpDTgxczdCfhjbXsvR9OLnuB6Fw+s=
 github.com/aportelli/golog v1.1.1/go.mod h1:oZU0Wb48ZTJKjihG9GfDC0h5VLSuhqvygtOA6CGlFzU=
 github.com/briandowns/spinner v1.19.0 h1:s8aq38H+Qju89yhp89b4iIiMzMm8YN3p6vGpwyh/a8E=
