@@ -52,11 +52,6 @@ func (s *FileIndexer) initDb() error {
 	return err
 }
 
-func (s *FileIndexer) Close() error {
-	err := s.db.Close()
-	return err
-}
-
 func (s *FileIndexer) begin() error {
 	_, err := s.db.Exec("BEGIN")
 	return err

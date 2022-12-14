@@ -30,19 +30,10 @@ var rootCmd = &cobra.Command{
 	Short: "Fast file indexer",
 	Long:  ``,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		if rootOpt.Profile != "" {
-			log.Inf.Printf("Starting profiling (output file '%s')", rootOpt.Profile)
-			f, err := os.Create(rootOpt.Profile)
-			log.ErrorCheck(err, "cannot create profile file '"+rootOpt.Profile+"'")
-			err = pprof.StartCPUProfile(f)
-			log.ErrorCheck(err, "cannot start profiling")
-		}
+		startProfiling()
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if rootOpt.Profile != "" {
-			log.Inf.Printf("Stopping profiling (output file '%s')", rootOpt.Profile)
-			pprof.StopCPUProfile()
-		}
+		stopProfiling()
 	},
 }
 
@@ -61,4 +52,26 @@ func init() {
 	rootCmd.PersistentFlags().IntVarP(&log.Level, "verbosity", "v", 0,
 		"verbosity level (0: default, 1: info, 2: debug)")
 	rootCmd.PersistentFlags().StringVar(&rootOpt.Profile, "profile", "", "save pprof profile")
+}
+
+func startProfiling() {
+	if rootOpt.Profile != "" {
+		log.Inf.Printf("Starting profiling (output file '%s')", rootOpt.Profile)
+		f, err := os.Create(rootOpt.Profile)
+		log.ErrorCheck(err, "cannot create profile file '"+rootOpt.Profile+"'")
+		err = pprof.StartCPUProfile(f)
+		log.ErrorCheck(err, "cannot start profiling")
+	}
+}
+
+func stopProfiling() {
+	if rootOpt.Profile != "" {
+		log.Inf.Printf("Stopping profiling (output file '%s')", rootOpt.Profile)
+		pprof.StopCPUProfile()
+	}
+}
+
+func quit(status int) {
+	stopProfiling()
+	os.Exit(status)
 }

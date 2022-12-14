@@ -25,15 +25,20 @@ import (
 	log "github.com/aportelli/golog"
 )
 
+type InterruptError struct{}
+
+func (e *InterruptError) Error() string {
+	return "indexing interrupted"
+}
+
 type scanChan struct {
 	entries chan<- *fileEntry
 	errors  chan<- error
 	guard   chan struct{}
 }
 
-var signal = struct{}{}
-
 func (s *FileIndexer) IndexDir(dir string) error {
+	var status int
 	s.maxId = 0
 	s.resetStats()
 	info, err := os.Stat(dir)
@@ -44,36 +49,42 @@ func (s *FileIndexer) IndexDir(dir string) error {
 	cerrors := make(chan error)
 	cquit := make(chan struct{})
 	cguard := make(chan struct{}, s.opt.NumWorkers)
-	scanDone := make(chan struct{})
+	quitScan := make(chan int)
+	s.quitScan = quitScan
 	sc := scanChan{entries: centries, errors: cerrors, guard: cguard}
 	ic := insertChan{entries: centries, quit: cquit, errors: cerrors}
-	var swg, iwg sync.WaitGroup
-	iwg.Add(1)
-	go s.insertData(ic, &iwg)
+	var swg sync.WaitGroup
+	s.indexWg.Add(1)
+	go s.insertData(ic, &s.indexWg)
 	go func() {
 		log.Dbg.Printf("FileIndexer: Scanner starting")
 		id := s.newId()
 		centries <- &fileEntry{Id: id, ParentId: nil, Path: dir, Size: info.Size()}
 		swg.Add(1)
-		cguard <- signal
+		cguard <- struct{}{}
 		go s.scanDirectory(dirData{Path: dir, Id: id}, sc, &swg)
 		swg.Wait()
-		scanDone <- signal
+		quitScan <- 0
 	}()
 out:
 	for {
 		select {
-		case <-scanDone:
+		case status = <-quitScan:
 			close(cquit)
+			s.quitScan = nil
 			break out
 		case err := <-cerrors:
-			log.Err.Fatalln(err)
 			close(cquit)
+			s.quitScan = nil
 			return err
 		}
 	}
-	iwg.Wait()
-	return nil
+	s.indexWg.Wait()
+	if status == 1 {
+		return &InterruptError{}
+	} else {
+		return nil
+	}
 }
 
 type dirData struct {
@@ -103,7 +114,7 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 			wg.Add(1)
 			go func() {
 				atomic.AddInt32(&s.stats.QueuingWorkers, 1)
-				c.guard <- signal
+				c.guard <- struct{}{}
 				atomic.AddInt32(&s.stats.QueuingWorkers, -1)
 				s.scanDirectory(dirData{Path: path, Id: newId}, c, wg)
 			}()

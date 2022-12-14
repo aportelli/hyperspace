@@ -19,6 +19,7 @@ package index
 import (
 	"database/sql"
 	"os"
+	"sync"
 	"sync/atomic"
 )
 
@@ -37,6 +38,8 @@ type FileIndexer struct {
 	maxId          uint64
 	stats          IndexerStats
 	opt            FileIndexerOpt
+	quitScan       chan int
+	indexWg        sync.WaitGroup
 }
 
 type FileIndexerOpt struct {
@@ -68,6 +71,18 @@ func (s *FileIndexer) resetStats() {
 
 func (s *FileIndexer) Stats() IndexerStats {
 	return s.stats
+}
+
+func (s *FileIndexer) Close() error {
+	err := s.db.Close()
+	return err
+}
+
+func (s *FileIndexer) Interrupt() {
+	if s.quitScan != nil {
+		s.quitScan <- 1
+		s.indexWg.Wait()
+	}
 }
 
 func (s *FileIndexer) newId() uint64 {

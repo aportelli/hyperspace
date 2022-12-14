@@ -17,6 +17,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -36,6 +37,7 @@ var indexCmd = &cobra.Command{
 	Long:  ``,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		var status int
 		root := args[0]
 		dbPath := indexOpt.Db
 		if dbPath == "" {
@@ -51,7 +53,7 @@ var indexCmd = &cobra.Command{
 		spin := spinner.New(spinString, 100*time.Millisecond)
 		spin.Color("blue")
 		log.Msg.Printf("Scanning directory '%s'", root)
-		done := make(chan bool)
+		done := make(chan int)
 		sigint := make(chan os.Signal)
 		signal.Notify(sigint, os.Interrupt)
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -61,17 +63,23 @@ var indexCmd = &cobra.Command{
 			if spin.Active() {
 				spin.Stop()
 			}
-			log.Err.Fatalln("Indexing interrupted")
+			log.Warn.Println("Indexing interrupted")
+			fileIndexer.Interrupt()
 		}()
 		go func() {
 			err := fileIndexer.IndexDir(root)
-			log.ErrorCheck(err, "Indexer encountered an error")
-			done <- true
+			var e *index.InterruptError
+			if errors.As(err, &e) {
+				done <- 1
+			} else {
+				log.ErrorCheck(err, "Indexer encountered an error")
+			}
+			done <- 0
 		}()
 	out:
 		for {
 			select {
-			case <-done:
+			case status = <-done:
 				break out
 			case t := <-ticker.C:
 				if !spin.Active() {
@@ -79,18 +87,18 @@ var indexCmd = &cobra.Command{
 				}
 				dt := t.Sub(tStart)
 				stats := fileIndexer.Stats()
-				spin.Suffix = fmt.Sprintf(" %.0f files/s | %d active workers | %d queuing directories | %.0f DB insertions/s | total size: %s",
+				spin.Suffix = fmt.Sprintf(" %.0f file/s | %d workers | %d queued | %.0f DB insert/s | total %d files, %s",
 					float64(stats.NFiles)/dt.Seconds(), stats.ActiveWorkers, stats.QueuingWorkers,
-					float64(stats.DbInsertions)/dt.Seconds(), log.SizeString(log.ByteSize(stats.TotalSize)))
+					float64(stats.DbInsertions)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
 			}
 		}
 		err = fileIndexer.Close()
 		log.ErrorCheck(err, "could not close database")
 		spin.Stop()
-		dt := time.Since(tStart)
-		stats := fileIndexer.Stats()
-		log.Msg.Printf("Indexed %d file(s), total size %s, %.0f files/s", stats.NFiles,
-			log.SizeString(log.ByteSize(stats.TotalSize)), float64(stats.NFiles)/dt.Seconds())
+		printTotalStats(tStart, fileIndexer)
+		if status > 0 {
+			quit(status)
+		}
 	},
 }
 
@@ -105,6 +113,14 @@ var indexOpt = struct {
 func init() {
 	rootCmd.AddCommand(indexCmd)
 	indexCmd.Flags().StringVarP(&indexOpt.Db, "db", "d", "", "index database path")
-	indexCmd.Flags().UintVarP(&indexOpt.Opt.NumWorkers, "jobs", "j", (uint)(10*runtime.NumCPU()), "number of concurrent scanner tasks")
-	indexCmd.Flags().UintVarP(&indexOpt.Opt.DbBatchSize, "db-batch", "b", 1000000, "number of insertion per DB transaction")
+	indexCmd.Flags().UintVarP(&indexOpt.Opt.NumWorkers, "jobs", "j", (uint)(runtime.NumCPU()), "number of concurrent scanner tasks")
+	indexCmd.Flags().UintVarP(&indexOpt.Opt.DbBatchSize, "db-batch", "b", 10000, "number of insertion per DB transaction")
+}
+
+func printTotalStats(tStart time.Time, fileIndexer *index.FileIndexer) {
+	dt := time.Since(tStart)
+	stats := fileIndexer.Stats()
+	log.Msg.Printf("Indexed %d file(s), total size %s, %.0f files/s", stats.NFiles,
+		log.SizeString(log.ByteSize(stats.TotalSize)), float64(stats.NFiles)/dt.Seconds())
+	log.Msg.Println("Total time", dt.String())
 }
