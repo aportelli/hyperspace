@@ -17,6 +17,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package index
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -59,10 +60,10 @@ func (s *FileIndexer) IndexDir(dir string) error {
 	go func() {
 		log.Dbg.Printf("FileIndexer: Scanner starting")
 		id := s.newId()
-		centries <- &fileEntry{Id: id, ParentId: nil, Path: dir, Size: info.Size()}
+		centries <- &fileEntry{Id: id, ParentId: nil, Path: fmt.Sprint(id), Size: info.Size()}
 		swg.Add(1)
 		cguard <- struct{}{}
-		go s.scanDirectory(dirData{Path: dir, Id: id}, sc, &swg)
+		go s.scanDirectory(dirData{Path: dir, TreePath: fmt.Sprint(id), Id: id}, sc, &swg)
 		swg.Wait()
 		quitScan <- 0
 	}()
@@ -88,8 +89,9 @@ out:
 }
 
 type dirData struct {
-	Path string
-	Id   any
+	Path     string
+	TreePath string
+	Id       any
 }
 
 func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) {
@@ -110,17 +112,36 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 		}
 		if d.IsDir() && dd.Path != path {
 			newId := s.newId()
-			c.entries <- &fileEntry{Id: newId, ParentId: dd.Id, Path: path, Size: info.Size()}
+			treePath := fmt.Sprintf("%s/%d", dd.TreePath, newId)
+			c.entries <- &fileEntry{
+				Id:       newId,
+				Name:     info.Name(),
+				Path:     treePath,
+				ParentId: dd.Id,
+				Size:     info.Size(),
+			}
 			wg.Add(1)
 			go func() {
 				atomic.AddInt32(&s.stats.QueuingWorkers, 1)
 				c.guard <- struct{}{}
 				atomic.AddInt32(&s.stats.QueuingWorkers, -1)
-				s.scanDirectory(dirData{Path: path, Id: newId}, c, wg)
+				s.scanDirectory(dirData{
+					Path:     path,
+					TreePath: treePath,
+					Id:       newId,
+				}, c, wg)
 			}()
 			return filepath.SkipDir
 		} else if !d.IsDir() {
-			c.entries <- &fileEntry{Id: s.newId(), ParentId: dd.Id, Path: path, Size: info.Size()}
+			newId := s.newId()
+			treePath := fmt.Sprintf("%s/%d", dd.TreePath, newId)
+			c.entries <- &fileEntry{
+				Id:       newId,
+				Name:     info.Name(),
+				Path:     treePath,
+				ParentId: dd.Id,
+				Size:     info.Size(),
+			}
 			return nil
 		}
 		return nil

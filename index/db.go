@@ -33,14 +33,23 @@ func (s *FileIndexer) initDb() error {
 	if err != nil {
 		return err
 	}
+	_, err = s.db.Exec("PRAGMA case_sensitive_like = ON")
+	if err != nil {
+		return err
+	}
 	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS tree (
 		id INT PRIMARY KEY,
     parent_id INT NULL REFERENCES tree (id),
+		path TEXT NOT NULL,
 		size INT NOT NULL)`)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("CREATE TABLE IF NOT EXISTS files (id INT PRIMARY KEY, path TEXT UNIQUE NOT NULL)")
+	_, err = s.db.Exec("CREATE TABLE IF NOT EXISTS files (id INT PRIMARY KEY, name TEXT NOT NULL)")
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("CREATE INDEX index_path ON tree(path)")
 	if err != nil {
 		return err
 	}
@@ -48,7 +57,7 @@ func (s *FileIndexer) initDb() error {
 	if err != nil {
 		return err
 	}
-	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?)")
+	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?)")
 	return err
 }
 
@@ -64,19 +73,20 @@ func (s *FileIndexer) commit() error {
 
 type fileEntry struct {
 	Id       uint64
+	Name     string
 	Path     string
 	ParentId any
 	Size     int64
 }
 
 func (s *FileIndexer) insertFile(entry *fileEntry) error {
-	_, err := s.insertFileStmt.Exec(entry.Id, entry.Path)
+	_, err := s.insertFileStmt.Exec(entry.Id, entry.Name)
 	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }
 
 func (s *FileIndexer) insertTree(entry *fileEntry) error {
-	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Size)
+	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Path, entry.Size)
 	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }
