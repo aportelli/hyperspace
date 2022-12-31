@@ -17,6 +17,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package index
 
 import (
+	"database/sql"
 	"sync"
 	"sync/atomic"
 
@@ -24,8 +25,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func (s *FileIndexer) initDb() error {
-	_, err := s.db.Exec("PRAGMA journal_mode=WAL")
+func (s *FileIndexer) openDb(path string) error {
+	var err error
+	s.db, err = sql.Open("sqlite3", path)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("PRAGMA journal_mode=WAL")
 	if err != nil {
 		return err
 	}
@@ -37,27 +43,24 @@ func (s *FileIndexer) initDb() error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS tree (
+	return nil
+}
+
+func (s *FileIndexer) initDb() error {
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS tree (
 		id INT PRIMARY KEY,
     parent_id INT NULL REFERENCES tree (id),
 		path TEXT NOT NULL,
+		name TEXT NOT NULL,
 		size INT NOT NULL)`)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("CREATE TABLE IF NOT EXISTS files (id INT PRIMARY KEY, name TEXT NOT NULL)")
+	_, err = s.db.Exec("CREATE INDEX IF NOT EXISTS index_path ON tree(path)")
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("CREATE INDEX index_path ON tree(path)")
-	if err != nil {
-		return err
-	}
-	s.insertFileStmt, err = s.db.Prepare("INSERT INTO files VALUES(?,?)")
-	if err != nil {
-		return err
-	}
-	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?)")
+	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?,?)")
 	return err
 }
 
@@ -79,14 +82,8 @@ type fileEntry struct {
 	Size     int64
 }
 
-func (s *FileIndexer) insertFile(entry *fileEntry) error {
-	_, err := s.insertFileStmt.Exec(entry.Id, entry.Name)
-	atomic.AddUint64(&s.stats.DbInsertions, 1)
-	return err
-}
-
 func (s *FileIndexer) insertTree(entry *fileEntry) error {
-	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Path, entry.Size)
+	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Path, entry.Name, entry.Size)
 	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }
@@ -109,10 +106,6 @@ func (s *FileIndexer) insertData(c insertChan, wg *sync.WaitGroup) {
 		for i := uint(0); i < s.opt.DbBatchSize; i++ {
 			select {
 			case fileEntry := <-c.entries:
-				err = s.insertFile(fileEntry)
-				if err != nil {
-					c.errors <- err
-				}
 				err = s.insertTree(fileEntry)
 				if err != nil {
 					c.errors <- err

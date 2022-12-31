@@ -33,7 +33,6 @@ type IndexerStats struct {
 
 type FileIndexer struct {
 	db             *sql.DB
-	insertFileStmt *sql.Stmt
 	insertTreeStmt *sql.Stmt
 	maxId          uint64
 	stats          IndexerStats
@@ -61,7 +60,14 @@ func NewFileIndexer(path string, opt FileIndexerOpt, resetDb bool) (*FileIndexer
 	if err != nil {
 		return nil, err
 	}
+	err = s.openDb(path)
+	if err != nil {
+		return nil, err
+	}
 	err = s.initDb()
+	if err != nil {
+		return nil, err
+	}
 	return s, err
 }
 
