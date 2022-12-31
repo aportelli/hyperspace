@@ -51,16 +51,30 @@ func (s *FileIndexer) initDb() error {
 		id INT PRIMARY KEY,
     parent_id INT NULL REFERENCES tree (id),
 		path TEXT NOT NULL,
+		depth INT NOT NULL,
 		name TEXT NOT NULL,
+		type TEXT NOT NULL,
 		size INT NOT NULL)`)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("CREATE INDEX IF NOT EXISTS index_path ON tree(path)")
+	_, err = s.db.Exec(`CREATE VIEW IF NOT EXISTS view_tree_hex AS
+		SELECT
+		  printf("%012x",id) AS id,
+			CASE
+			  WHEN parent_id NOT NULL THEN printf("%012x",parent_id)
+				ELSE NULL
+			END parent_id,
+			path, depth, name, type, size
+		FROM tree`)
 	if err != nil {
 		return err
 	}
-	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?,?)")
+	// _, err = s.db.Exec("CREATE INDEX IF NOT EXISTS index_path ON tree(path)")
+	// if err != nil {
+	// 	return err
+	// }
+	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?,?,?,?)")
 	return err
 }
 
@@ -75,15 +89,18 @@ func (s *FileIndexer) commit() error {
 }
 
 type fileEntry struct {
-	Id       uint64
-	Name     string
-	Path     string
+	Id       int64
 	ParentId any
+	Path     string
+	Depth    uint
+	Name     string
+	Type     string
 	Size     int64
 }
 
 func (s *FileIndexer) insertTree(entry *fileEntry) error {
-	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Path, entry.Name, entry.Size)
+	_, err := s.insertTreeStmt.Exec(entry.Id, entry.ParentId, entry.Path, entry.Depth, entry.Name,
+		entry.Type, entry.Size)
 	atomic.AddUint64(&s.stats.DbInsertions, 1)
 	return err
 }

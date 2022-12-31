@@ -20,7 +20,6 @@ import (
 	"database/sql"
 	"os"
 	"sync"
-	"sync/atomic"
 )
 
 type IndexerStats struct {
@@ -34,7 +33,6 @@ type IndexerStats struct {
 type FileIndexer struct {
 	db             *sql.DB
 	insertTreeStmt *sql.Stmt
-	maxId          uint64
 	stats          IndexerStats
 	opt            FileIndexerOpt
 	quitScan       chan int
@@ -89,8 +87,4 @@ func (s *FileIndexer) Interrupt() {
 		s.quitScan <- 1
 		s.indexWg.Wait()
 	}
-}
-
-func (s *FileIndexer) newId() uint64 {
-	return atomic.AddUint64(&s.maxId, 1)
 }

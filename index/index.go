@@ -38,9 +38,16 @@ type scanChan struct {
 	guard   chan struct{}
 }
 
+type dirData struct {
+	Path     string
+	TreePath string
+	HashPath string
+	Depth    uint
+	Id       int64
+}
+
 func (s *FileIndexer) IndexDir(dir string) error {
 	var status int
-	s.maxId = 0
 	s.resetStats()
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -59,11 +66,19 @@ func (s *FileIndexer) IndexDir(dir string) error {
 	go s.insertData(ic, &s.indexWg)
 	go func() {
 		log.Dbg.Printf("FileIndexer: Scanner starting")
-		id := s.newId()
-		centries <- &fileEntry{Id: id, ParentId: nil, Path: fmt.Sprint(id), Size: info.Size()}
+		id := PathHash("")
+		centries <- &fileEntry{
+			Id:       id,
+			ParentId: nil,
+			Path:     "",
+			Depth:    0,
+			Name:     "",
+			Type:     "d",
+			Size:     info.Size(),
+		}
 		swg.Add(1)
 		cguard <- struct{}{}
-		go s.scanDirectory(dirData{Path: dir, TreePath: fmt.Sprint(id), Id: id}, sc, &swg)
+		go s.scanDirectory(dirData{Path: dir, TreePath: "", HashPath: "", Id: id}, sc, &swg)
 		swg.Wait()
 		quitScan <- 0
 	}()
@@ -88,18 +103,21 @@ out:
 	}
 }
 
-type dirData struct {
-	Path     string
-	TreePath string
-	Id       any
-}
-
 func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() { <-c.guard }()
 
 	// registering as active
 	atomic.AddInt32(&s.stats.ActiveWorkers, 1)
+
+	// path append function
+	pathAppend := func(path string, extra string) string {
+		if path != "" {
+			return fmt.Sprintf("%s/%s", path, extra)
+		} else {
+			return extra
+		}
+	}
 
 	// scan function
 	scan := func(path string, d os.DirEntry, err error) error {
@@ -110,14 +128,18 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 		if err2 != nil {
 			return nil
 		}
+		log.Dbg.Println(path)
 		if d.IsDir() && dd.Path != path {
-			newId := s.newId()
-			treePath := fmt.Sprintf("%s/%d", dd.TreePath, newId)
+			newTreePath := pathAppend(dd.TreePath, info.Name())
+			newId := PathHash(newTreePath)
+			newHashPath := pathAppend(dd.HashPath, HashToString(newId))
 			c.entries <- &fileEntry{
 				Id:       newId,
-				Name:     info.Name(),
-				Path:     treePath,
 				ParentId: dd.Id,
+				Path:     newHashPath,
+				Depth:    dd.Depth,
+				Name:     info.Name(),
+				Type:     "d",
 				Size:     info.Size(),
 			}
 			wg.Add(1)
@@ -127,19 +149,24 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 				atomic.AddInt32(&s.stats.QueuingWorkers, -1)
 				s.scanDirectory(dirData{
 					Path:     path,
-					TreePath: treePath,
+					TreePath: newTreePath,
+					HashPath: newHashPath,
+					Depth:    dd.Depth + 1,
 					Id:       newId,
 				}, c, wg)
 			}()
 			return filepath.SkipDir
 		} else if !d.IsDir() {
-			newId := s.newId()
-			treePath := fmt.Sprintf("%s/%d", dd.TreePath, newId)
+			treePath := pathAppend(dd.TreePath, info.Name())
+			newId := PathHash(treePath)
+			hashPath := pathAppend(dd.HashPath, HashToString(newId))
 			c.entries <- &fileEntry{
 				Id:       newId,
-				Name:     info.Name(),
-				Path:     treePath,
 				ParentId: dd.Id,
+				Path:     hashPath,
+				Depth:    dd.Depth,
+				Name:     info.Name(),
+				Type:     "f",
 				Size:     info.Size(),
 			}
 			return nil
