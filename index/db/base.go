@@ -93,7 +93,7 @@ func (d *IndexDb) open(path string) error {
 }
 
 func (d *IndexDb) initTables() error {
-	_, err := d.db.Exec(`CREATE TABLE value_map (
+	_, err := d.db.Exec(`CREATE TABLE key_value (
 		key TEXT PRIMARY KEY,
 		value TEXT)`)
 	if err != nil {
@@ -129,7 +129,7 @@ func (d *IndexDb) initStatements() error {
 	if err != nil {
 		return err
 	}
-	d.insertValStmt, err = d.db.Prepare("REPLACE INTO value_map VALUES(?,?)")
+	d.insertValStmt, err = d.db.Prepare("REPLACE INTO key_value VALUES(?,?)")
 	if err != nil {
 		return err
 	}

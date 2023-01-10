@@ -26,7 +26,7 @@ func (d *IndexDb) SetValue(key string, value any) error {
 
 func (d *IndexDb) GetValue(key string) (any, error) {
 	var value any
-	r := d.db.QueryRow("SELECT value FROM tree WHERE key = ?", key)
+	r := d.db.QueryRow("SELECT value FROM key_value WHERE key = ?", key)
 	err := r.Scan(&value)
 	if err != nil {
 		return "", err
