@@ -70,12 +70,16 @@ func (s *FileIndexer) initDb() error {
 	if err != nil {
 		return err
 	}
-	// _, err = s.db.Exec("CREATE INDEX IF NOT EXISTS index_path ON tree(path)")
-	// if err != nil {
-	// 	return err
-	// }
 	s.insertTreeStmt, err = s.db.Prepare("INSERT INTO tree VALUES(?,?,?,?,?,?,?)")
 	return err
+}
+
+func (s *FileIndexer) CreateDbIndices() error {
+	_, err := s.db.Exec("CREATE INDEX IF NOT EXISTS index_path ON tree(path)")
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *FileIndexer) begin() error {

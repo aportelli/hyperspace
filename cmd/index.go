@@ -72,15 +72,15 @@ var indexCmd = &cobra.Command{
 			if errors.As(err, &e) {
 				done <- 1
 			} else {
-				log.ErrorCheck(err, "Indexer encountered an error")
+				log.ErrorCheck(err, "indexer encountered an error")
 			}
 			done <- 0
 		}()
-	out:
+	out1:
 		for {
 			select {
 			case status = <-done:
-				break out
+				break out1
 			case t := <-ticker.C:
 				if !spin.Active() {
 					spin.Start()
@@ -92,13 +92,24 @@ var indexCmd = &cobra.Command{
 					float64(stats.DbInsertions)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
 			}
 		}
-		err = fileIndexer.Close()
-		log.ErrorCheck(err, "could not close database")
 		spin.Stop()
 		printTotalStats(tStart, fileIndexer)
 		if status > 0 {
 			quit(status)
 		}
+		tStart = time.Now()
+		go func() {
+			err := fileIndexer.CreateDbIndices()
+			log.ErrorCheck(err, "could note create DB indices")
+			done <- 0
+		}()
+		spin.Start()
+		spin.Suffix = " Creating database indices"
+		<-done
+		spin.Stop()
+		log.Msg.Println("Database indices created, it took", time.Since(tStart).String())
+		err = fileIndexer.Close()
+		log.ErrorCheck(err, "could not close database")
 	},
 }
 
@@ -122,5 +133,5 @@ func printTotalStats(tStart time.Time, fileIndexer *index.FileIndexer) {
 	stats := fileIndexer.Stats()
 	log.Msg.Printf("Indexed %d file(s), total size %s, %.0f files/s", stats.NFiles,
 		log.SizeString(log.ByteSize(stats.TotalSize)), float64(stats.NFiles)/dt.Seconds())
-	log.Msg.Println("Total time", dt.String())
+	log.Msg.Println("Total indexing time", dt.String())
 }
