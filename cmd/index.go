@@ -26,6 +26,7 @@ import (
 
 	log "github.com/aportelli/golog"
 	"github.com/aportelli/hyperspace/index"
+	"github.com/aportelli/hyperspace/index/db"
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 )
@@ -48,8 +49,9 @@ var indexCmd = &cobra.Command{
 			log.ErrorCheck(err, "")
 		}
 		log.Dbg.Println("using database '" + dbPath + "'")
-		fileIndexer, err := index.NewFileIndexer(dbPath, indexOpt.Opt, true)
+		db, err := db.NewIndexDb(dbPath, indexOpt.DbOpt)
 		log.ErrorCheck(err, "could not create database")
+		fileIndexer := index.NewFileIndexer(db, indexOpt.NumWorkers)
 		spin := spinner.New(spinString, 100*time.Millisecond)
 		spin.Color("blue")
 		log.Msg.Printf("Scanning directory '%s'", root)
@@ -87,9 +89,10 @@ var indexCmd = &cobra.Command{
 				}
 				dt := t.Sub(tStart)
 				stats := fileIndexer.Stats()
+				dbInserts := fileIndexer.Db.Insertions
 				spin.Suffix = fmt.Sprintf(" %.0f file/s | %d workers | %d queued | %.0f DB insert/s | total %d files, %s",
 					float64(stats.NFiles)/dt.Seconds(), stats.ActiveWorkers, stats.QueuingWorkers,
-					float64(stats.DbInsertions)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
+					float64(dbInserts)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
 			}
 		}
 		spin.Stop()
@@ -99,7 +102,7 @@ var indexCmd = &cobra.Command{
 		}
 		tStart = time.Now()
 		go func() {
-			err := fileIndexer.CreateDbIndices()
+			err := fileIndexer.Db.CreateIndices()
 			log.ErrorCheck(err, "could note create DB indices")
 			done <- 0
 		}()
@@ -108,24 +111,26 @@ var indexCmd = &cobra.Command{
 		<-done
 		spin.Stop()
 		log.Msg.Println("Database indices created, it took", time.Since(tStart).String())
-		err = fileIndexer.Close()
+		err = db.Close()
 		log.ErrorCheck(err, "could not close database")
 	},
 }
 
 var indexOpt = struct {
-	Db  string
-	Opt index.FileIndexerOpt
+	Db         string
+	DbOpt      db.IndexDbOpt
+	NumWorkers uint
 }{
-	Db:  "",
-	Opt: index.FileIndexerOpt{NumWorkers: 0, DbBatchSize: 0},
+	Db:         "",
+	DbOpt:      db.IndexDbOpt{Reset: true, BatchSize: 0},
+	NumWorkers: 0,
 }
 
 func init() {
 	rootCmd.AddCommand(indexCmd)
 	indexCmd.Flags().StringVarP(&indexOpt.Db, "db", "d", "", "index database path")
-	indexCmd.Flags().UintVarP(&indexOpt.Opt.NumWorkers, "jobs", "j", (uint)(runtime.NumCPU()), "number of concurrent scanner tasks")
-	indexCmd.Flags().UintVarP(&indexOpt.Opt.DbBatchSize, "db-batch", "b", 10000, "number of insertion per DB transaction")
+	indexCmd.Flags().UintVarP(&indexOpt.NumWorkers, "jobs", "j", (uint)(runtime.NumCPU()), "number of concurrent scanner tasks")
+	indexCmd.Flags().UintVarP(&indexOpt.DbOpt.BatchSize, "db-batch", "b", 10000, "number of insertion per DB transaction")
 }
 
 func printTotalStats(tStart time.Time, fileIndexer *index.FileIndexer) {

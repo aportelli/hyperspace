@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aportelli/hyperspace/index"
+	"github.com/aportelli/hyperspace/index/hash"
 )
 
 type hashTest struct {
@@ -37,30 +37,36 @@ var hashTests = []hashTest{
 
 func TestHash(t *testing.T) {
 	for _, test := range hashTests {
-		intHash := index.PathHash(test.path)
-		if intHash != test.intHash {
-			t.Errorf("Got int64 hash %x, expected %x\n", intHash, test.intHash)
-		}
+		t.Run(strings.Replace(test.path, "/", "_", -1), func(t *testing.T) {
+			intHash := hash.PathHash(test.path)
+			if intHash != test.intHash {
+				t.Errorf("Got int64 hash %x, expected %x\n", intHash, test.intHash)
+			}
+		})
 	}
 }
 
 func TestStringToHash(t *testing.T) {
 	for _, test := range hashTests {
-		stringHash := index.HashToString(test.intHash)
-		if !strings.EqualFold(stringHash, test.stringHash) {
-			t.Errorf("Got string hash %s, expected %s\n", stringHash, test.stringHash)
-		}
+		t.Run(strings.Replace(test.path, "/", "_", -1), func(t *testing.T) {
+			stringHash := hash.HashToString(test.intHash)
+			if !strings.EqualFold(stringHash, test.stringHash) {
+				t.Errorf("Got string hash %s, expected %s\n", stringHash, test.stringHash)
+			}
+		})
 	}
 }
 
 func TestHashToString(t *testing.T) {
 	for _, test := range hashTests {
-		intHash, err := index.StringToHash(test.stringHash)
-		if err != nil {
-			t.Errorf("Got error %s", err.Error())
-		}
-		if intHash != test.intHash {
-			t.Errorf("Got hash %x, expected %x\n", intHash, test.intHash)
-		}
+		t.Run(strings.Replace(test.path, "/", "_", -1), func(t *testing.T) {
+			intHash, err := hash.StringToHash(test.stringHash)
+			if err != nil {
+				t.Errorf("Got error %s", err.Error())
+			}
+			if intHash != test.intHash {
+				t.Errorf("Got hash %x, expected %x\n", intHash, test.intHash)
+			}
+		})
 	}
 }

@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 
 	log "github.com/aportelli/golog"
+	"github.com/aportelli/hyperspace/index/db"
+	"github.com/aportelli/hyperspace/index/hash"
 )
 
 type InterruptError struct{}
@@ -33,7 +35,7 @@ func (e *InterruptError) Error() string {
 }
 
 type scanChan struct {
-	entries chan<- *fileEntry
+	entries chan<- *db.FileEntry
 	errors  chan<- error
 	guard   chan struct{}
 }
@@ -53,21 +55,27 @@ func (s *FileIndexer) IndexDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	centries := make(chan *fileEntry)
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	s.Db.SetValue("root_input", dir)
+	s.Db.SetValue("root_abs", root)
+	centries := make(chan *db.FileEntry)
 	cerrors := make(chan error)
 	cquit := make(chan struct{})
-	cguard := make(chan struct{}, s.opt.NumWorkers)
+	cguard := make(chan struct{}, s.NumWorkers)
 	quitScan := make(chan int)
 	s.quitScan = quitScan
 	sc := scanChan{entries: centries, errors: cerrors, guard: cguard}
-	ic := insertChan{entries: centries, quit: cquit, errors: cerrors}
+	ic := db.InsertChan{Entries: centries, Quit: cquit, Errors: cerrors}
 	var swg sync.WaitGroup
 	s.indexWg.Add(1)
-	go s.insertData(ic, &s.indexWg)
+	go s.Db.InsertData(ic, &s.indexWg)
 	go func() {
 		log.Dbg.Printf("FileIndexer: Scanner starting")
-		id := PathHash("")
-		centries <- &fileEntry{
+		id := hash.PathHash("")
+		centries <- &db.FileEntry{
 			Id:       id,
 			ParentId: nil,
 			Path:     "",
@@ -131,9 +139,9 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 		log.Dbg.Println(path)
 		if d.IsDir() && dd.Path != path {
 			newTreePath := pathAppend(dd.TreePath, info.Name())
-			newId := PathHash(newTreePath)
-			newHashPath := pathAppend(dd.HashPath, HashToString(newId))
-			c.entries <- &fileEntry{
+			newId := hash.PathHash(newTreePath)
+			newHashPath := pathAppend(dd.HashPath, hash.HashToString(newId))
+			c.entries <- &db.FileEntry{
 				Id:       newId,
 				ParentId: dd.Id,
 				Path:     newHashPath,
@@ -142,6 +150,8 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 				Type:     "d",
 				Size:     info.Size(),
 			}
+			atomic.AddUint64(&s.stats.NFiles, 1)
+			atomic.AddUint64(&s.stats.TotalSize, uint64(info.Size()))
 			wg.Add(1)
 			go func() {
 				atomic.AddInt32(&s.stats.QueuingWorkers, 1)
@@ -158,9 +168,9 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 			return filepath.SkipDir
 		} else if !d.IsDir() {
 			treePath := pathAppend(dd.TreePath, info.Name())
-			newId := PathHash(treePath)
-			hashPath := pathAppend(dd.HashPath, HashToString(newId))
-			c.entries <- &fileEntry{
+			newId := hash.PathHash(treePath)
+			hashPath := pathAppend(dd.HashPath, hash.HashToString(newId))
+			c.entries <- &db.FileEntry{
 				Id:       newId,
 				ParentId: dd.Id,
 				Path:     hashPath,
@@ -169,6 +179,8 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 				Type:     "f",
 				Size:     info.Size(),
 			}
+			atomic.AddUint64(&s.stats.NFiles, 1)
+			atomic.AddUint64(&s.stats.TotalSize, uint64(info.Size()))
 			return nil
 		}
 		return nil

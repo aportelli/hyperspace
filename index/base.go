@@ -17,9 +17,9 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 package index
 
 import (
-	"database/sql"
-	"os"
 	"sync"
+
+	"github.com/aportelli/hyperspace/index/db"
 )
 
 type IndexerStats struct {
@@ -27,46 +27,21 @@ type IndexerStats struct {
 	TotalSize      uint64
 	ActiveWorkers  int32
 	QueuingWorkers int32
-	DbInsertions   uint64
 }
 
 type FileIndexer struct {
-	db             *sql.DB
-	insertTreeStmt *sql.Stmt
-	stats          IndexerStats
-	opt            FileIndexerOpt
-	quitScan       chan int
-	indexWg        sync.WaitGroup
+	Db         *db.IndexDb
+	stats      IndexerStats
+	NumWorkers uint
+	quitScan   chan int
+	indexWg    sync.WaitGroup
 }
 
-type FileIndexerOpt struct {
-	NumWorkers  uint
-	DbBatchSize uint
-}
-
-func NewFileIndexer(path string, opt FileIndexerOpt, resetDb bool) (*FileIndexer, error) {
+func NewFileIndexer(d *db.IndexDb, numWorkers uint) *FileIndexer {
 	s := new(FileIndexer)
-	s.opt = opt
-	var err error
-	if resetDb {
-		err = os.RemoveAll(path)
-		if err != nil {
-			return nil, err
-		}
-	}
-	s.db, err = sql.Open("sqlite3", path)
-	if err != nil {
-		return nil, err
-	}
-	err = s.openDb(path)
-	if err != nil {
-		return nil, err
-	}
-	err = s.initDb()
-	if err != nil {
-		return nil, err
-	}
-	return s, err
+	s.NumWorkers = numWorkers
+	s.Db = d
+	return s
 }
 
 func (s *FileIndexer) resetStats() {
@@ -75,11 +50,6 @@ func (s *FileIndexer) resetStats() {
 
 func (s *FileIndexer) Stats() IndexerStats {
 	return s.stats
-}
-
-func (s *FileIndexer) Close() error {
-	err := s.db.Close()
-	return err
 }
 
 func (s *FileIndexer) Interrupt() {
