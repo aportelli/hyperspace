@@ -33,6 +33,8 @@ var hashTests = []hashTest{
 	{"/dir1/dir2/dir3/dir4", 126142529671152, "72b9d8ac0ff0"},
 	{"/usr/bin/bash", 161059760740939, "927ba5d39a4b"},
 	{"any string", 47700301343738, "2B6217846BFA"},
+	{"UTF string João 👍", 164893783688819, "95f853670673"},
+	{"日本語", 12063291817715, "0af8b4393ef3"},
 }
 
 func TestHash(t *testing.T) {

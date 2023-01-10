@@ -21,6 +21,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Return the hash of a path as int64 (SQLite does not support uint64).
@@ -31,7 +33,7 @@ import (
 //  3. set the 2 highest bytes to zero
 //  4. convert the result to int64 in big endian
 func PathHash(path string) int64 {
-	fullHash := md5.Sum([]byte(path))
+	fullHash := md5.Sum([]byte(norm.NFC.String(path)))
 	copy(fullHash[:2], "\x00\x00")
 	hash := int64(binary.BigEndian.Uint64(fullHash[:8]))
 	return hash

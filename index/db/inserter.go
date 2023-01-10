@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 
 	log "github.com/aportelli/golog"
+	"golang.org/x/text/unicode/norm"
 )
 
 type FileEntry struct {
@@ -68,6 +69,7 @@ func (d *IndexDb) InsertData(c InsertChan, wg *sync.WaitGroup) {
 		for i := uint(0); i < d.BatchSize; i++ {
 			select {
 			case fileEntry := <-c.Entries:
+				fileEntry.Name = norm.NFC.String(fileEntry.Name)
 				err = d.insertTree(fileEntry)
 				if err != nil {
 					c.Errors <- err
