@@ -58,8 +58,8 @@ var indexCmd = &cobra.Command{
 		done := make(chan int)
 		sigint := make(chan os.Signal)
 		signal.Notify(sigint, os.Interrupt)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		tStart := <-ticker.C
+		tickerDt := 500 * time.Millisecond
+		ticker := time.NewTicker(tickerDt)
 		go func() {
 			<-sigint
 			if spin.Active() {
@@ -78,6 +78,10 @@ var indexCmd = &cobra.Command{
 			}
 			done <- 0
 		}()
+		tStart := <-ticker.C
+		tPrevious := tStart
+		nfilesPrevious := fileIndexer.Stats().NFiles
+		ninsertPrevious := fileIndexer.Db.Insertions
 	out1:
 		for {
 			select {
@@ -87,12 +91,15 @@ var indexCmd = &cobra.Command{
 				if !spin.Active() {
 					spin.Start()
 				}
-				dt := t.Sub(tStart)
+				dt := t.Sub(tPrevious)
 				stats := fileIndexer.Stats()
 				dbInserts := fileIndexer.Db.Insertions
 				spin.Suffix = fmt.Sprintf(" %.0f file/s | %d workers | %d queued | %.0f DB insert/s | total %d files, %s",
-					float64(stats.NFiles)/dt.Seconds(), stats.ActiveWorkers, stats.QueuingWorkers,
-					float64(dbInserts)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
+					float64(stats.NFiles-nfilesPrevious)/dt.Seconds(), stats.ActiveWorkers, stats.QueuingWorkers,
+					float64(dbInserts-ninsertPrevious)/dt.Seconds(), stats.NFiles, log.SizeString(log.ByteSize(stats.TotalSize)))
+				tPrevious = t
+				nfilesPrevious = stats.NFiles
+				ninsertPrevious = dbInserts
 			}
 		}
 		spin.Stop()
