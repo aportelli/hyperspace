@@ -89,7 +89,10 @@ func (d *IndexDb) GetId(path string) (int64, error) {
 	} else {
 		relPath = filepath.Clean(path)
 	}
-	id := hash.PathHash(relPath)
+	id, err := hash.PathHash(relPath)
+	if err != nil {
+		return 0, err
+	}
 	name, err := d.GetName(id)
 	if err != nil {
 		return 0, err

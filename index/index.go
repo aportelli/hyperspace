@@ -74,7 +74,10 @@ func (s *FileIndexer) IndexDir(dir string) error {
 	go s.Db.InsertData(ic, &s.indexWg)
 	go func() {
 		log.Dbg.Printf("FileIndexer: Scanner starting")
-		id := hash.PathHash("")
+		id, err := hash.PathHash("")
+		if err != nil {
+			cerrors <- err
+		}
 		centries <- &db.FileEntry{
 			Id:       id,
 			ParentId: nil,
@@ -136,10 +139,12 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 		if err2 != nil {
 			return nil
 		}
-		log.Dbg.Println(path)
 		if d.IsDir() && dd.Path != path {
 			newTreePath := pathAppend(dd.TreePath, info.Name())
-			newId := hash.PathHash(newTreePath)
+			newId, err2 := hash.PathHash(newTreePath)
+			if err2 != nil {
+				return err2
+			}
 			newHashPath := pathAppend(dd.HashPath, hash.HashToString(newId))
 			c.entries <- &db.FileEntry{
 				Id:       newId,
@@ -168,7 +173,10 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 			return filepath.SkipDir
 		} else if !d.IsDir() {
 			treePath := pathAppend(dd.TreePath, info.Name())
-			newId := hash.PathHash(treePath)
+			newId, err2 := hash.PathHash(treePath)
+			if err2 != nil {
+				return err2
+			}
 			hashPath := pathAppend(dd.HashPath, hash.HashToString(newId))
 			c.entries <- &db.FileEntry{
 				Id:       newId,
@@ -187,7 +195,10 @@ func (s *FileIndexer) scanDirectory(dd dirData, c scanChan, wg *sync.WaitGroup) 
 	}
 
 	// walk the tree
-	filepath.WalkDir(dd.Path, scan)
+	err := filepath.WalkDir(dd.Path, scan)
+	if err != nil {
+		c.errors <- err
+	}
 
 	// registering as inactive
 	atomic.AddInt32(&s.stats.ActiveWorkers, -1)

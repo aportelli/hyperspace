@@ -5,3 +5,4 @@
 *.db-wal
 *.code-workspace
 /*.prof
+/index/tests/hash.log

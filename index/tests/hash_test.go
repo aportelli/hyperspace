@@ -30,17 +30,19 @@ type hashTest struct {
 }
 
 var hashTests = []hashTest{
-	{"/dir1/dir2/dir3/dir4", 126142529671152, "72b9d8ac0ff0"},
-	{"/usr/bin/bash", 161059760740939, "927ba5d39a4b"},
-	{"any string", 47700301343738, "2B6217846BFA"},
-	{"UTF string João 👍", 164893783688819, "95f853670673"},
-	{"日本語", 12063291817715, "0af8b4393ef3"},
+	{"dir1/dir2/dir3/dir4", 275515016816611, "fa9456b527e3"},
+	{"usr/bin/bash", 103075467877435, "5dbf20a5dc3b"},
+	{"UTF/string/João/👍", 150634961215366, "89006f5a9f86"},
+	{"日/本/語", 52573909869918, "2fd0d138e55e"},
 }
 
 func TestHash(t *testing.T) {
 	for _, test := range hashTests {
 		t.Run(strings.Replace(test.path, "/", "_", -1), func(t *testing.T) {
-			intHash := hash.PathHash(test.path)
+			intHash, err := hash.PathHash(test.path)
+			if err != nil {
+				t.Errorf("error: %s\n", err.Error())
+			}
 			if intHash != test.intHash {
 				t.Errorf("Got int64 hash %x, expected %x\n", intHash, test.intHash)
 			}

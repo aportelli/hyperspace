@@ -78,10 +78,10 @@ func TestIndex(t *testing.T) {
 	})
 
 	paths := []pathTest{
-		{"Hôtel/été", "Hôtel/été", 81617519048312},
-		{".git/hooks/commit-msg.sample", ".git/hooks/commit-msg.sample", 989360371266},
-		{".git/hooks/../hooks/commit-msg.sample", ".git/hooks/commit-msg.sample", 989360371266},
-		{filepath.Join(testRoot, "index/tests/index_test.go"), "index/tests/index_test.go", 235148021444510},
+		{"Hôtel/été", "Hôtel/été", 172988949201389},
+		{".git/hooks/commit-msg.sample", ".git/hooks/commit-msg.sample", 108088335754770},
+		{".git/hooks/../hooks/commit-msg.sample", ".git/hooks/commit-msg.sample", 108088335754770},
+		{filepath.Join(testRoot, "index/tests/index_test.go"), "index/tests/index_test.go", 133444165767609},
 	}
 
 	for _, test := range paths {
